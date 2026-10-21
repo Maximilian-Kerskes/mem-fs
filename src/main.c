@@ -1,6 +1,5 @@
-#include <stdio.h>
+#include "mem-fs/fuse_ops.h"
 
-int main(void) {
-    printf("Hello, World!\n");
-    return 0;
+int main(int argc, char* argv[]) {
+    return fuse_main(argc, argv, &memfs_operations, NULL);
 }
