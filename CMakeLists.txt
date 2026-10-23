@@ -15,6 +15,7 @@ set(CMAKE_C_EXTENSIONS ON)
 add_executable(${PROJECT_NAME}
     src/main.c
     src/fuse_ops.c
+    src/fs.c
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -24,9 +25,10 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 )
 
 # use this if youre targetting POSIX and not just c std
-# target_compile_definitions(shell PRIVATE
-#     _POSIX_C_SOURCE=200809L
-# )
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    _POSIX_C_SOURCE=200809L
+    _GNU_SOURCE
+)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     include
@@ -43,6 +45,7 @@ enable_testing()
 add_executable(${PROJECT_NAME}_test
     tests/test.c
     src/fuse_ops.c
+    src/fs.c
 )
 
 add_test(
@@ -52,6 +55,11 @@ add_test(
 
 target_include_directories(${PROJECT_NAME}_test PRIVATE
     include
+)
+
+target_compile_definitions(${PROJECT_NAME}_test PRIVATE
+    _POSIX_C_SOURCE=200809L
+    _GNU_SOURCE
 )
 
 target_link_libraries(${PROJECT_NAME}_test PRIVATE
