@@ -1,12 +1,14 @@
 #include "mem-fs/fs.h"
 #include <asm-generic/errno-base.h>
 #include <asm-generic/errno.h>
+#include <bits/time.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 
 typedef struct {
     char* name;
@@ -18,6 +20,10 @@ typedef struct {
 
     mode_t mode;
     off_t size;
+
+    struct timespec atime;
+    struct timespec mtime;
+    struct timespec ctime;
 
     union {
         struct {
@@ -39,6 +45,12 @@ struct MemFs {
 
     size_t root_inode;
 };
+
+static struct timespec current_time(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts;
+}
 
 MemFs* fs_create(void) {
     MemFs* fs = calloc(1, sizeof(*fs));
@@ -62,6 +74,9 @@ MemFs* fs_create(void) {
     root->inode_number = 1;
     root->mode = S_IFDIR | 0755;
     root->size = 0;
+    root->atime = current_time();
+    root->mtime = current_time();
+    root->ctime = current_time();
 
     return fs;
 }
@@ -262,10 +277,15 @@ static int create_inode(MemFs* fs, mode_t mode, uint32_t* out_inode_index) {
 
     uint32_t index = (uint32_t)fs->inode_count;
 
+    struct timespec now = current_time();
+
     fs->inodes[index] = (Inode){
         .inode_number = index + 1,
         .mode = mode,
         .size = 0,
+        .atime = now,
+        .mtime = now,
+        .ctime = now,
     };
 
     fs->inode_count++;
@@ -365,6 +385,9 @@ static int create_node(MemFs* fs, const char* path, mode_t mode) {
         return -ENOTDIR;
     }
 
+    fs->inodes[parent_index].mtime = current_time();
+    fs->inodes[parent_index].ctime = current_time();
+
     uint32_t existing_index;
 
     result = find_dir_entry(fs, parent_index, name, &existing_index);
@@ -417,6 +440,9 @@ int fs_getattr(MemFs* fs, const char* path, struct stat* stbuf) {
     stbuf->st_ino = inode->inode_number;
     stbuf->st_mode = inode->mode;
     stbuf->st_size = inode->size;
+    stbuf->st_atim = inode->atime;
+    stbuf->st_mtim = inode->mtime;
+    stbuf->st_ctim = inode->ctime;
 
     if (S_ISREG(inode->mode)) {
         stbuf->st_nlink = 1;
@@ -493,6 +519,7 @@ ssize_t fs_read(MemFs* fs, const char* path, char* buffer, size_t size, off_t of
     }
 
     memcpy(buffer, inode->data + (size_t)offset, size);
+    inode->atime = current_time();
 
     return (ssize_t)size;
 }
@@ -551,6 +578,8 @@ ssize_t fs_write(MemFs* fs, const char* path, const char* buffer, size_t size, o
     }
 
     memcpy(inode->data + (size_t)offset, buffer, size);
+    inode->mtime = current_time();
+    inode->ctime = current_time();
     return (ssize_t)size;
 }
 
@@ -618,6 +647,8 @@ int fs_truncate(MemFs* fs, const char* path, off_t size) {
 
     inode->data = new_data;
     inode->size = size;
+    inode->mtime = current_time();
+    inode->ctime = current_time();
 
     return 0;
 }
@@ -752,10 +783,39 @@ int fs_rmdir(MemFs* fs, const char* path) {
 
     parent->entry_count--;
 
+    parent->mtime = current_time();
+    parent->ctime = current_time();
+
     free(target->entries);
     target->entries = NULL;
     target->entry_count = 0;
     target->entry_capacity = 0;
+
+    return 0;
+}
+
+int fs_utimens(MemFs* fs, const char* path, const struct timespec tv[2]) {
+    if (fs == NULL || path == NULL || tv == NULL) {
+        return -EINVAL;
+    }
+
+    uint32_t inode_index;
+    int result = resolve_path(fs, path, &inode_index);
+
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* inode = &fs->inodes[inode_index];
+
+    if (tv[0].tv_nsec != UTIME_OMIT) {
+        inode->atime = tv[0].tv_nsec == UTIME_NOW ? current_time() : tv[0];
+    }
+
+    if (tv[1].tv_nsec != UTIME_OMIT) {
+        inode->mtime = tv[1].tv_nsec == UTIME_NOW ? current_time() : tv[1];
+    }
+    inode->ctime = current_time();
 
     return 0;
 }

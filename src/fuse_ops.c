@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <string.h>
+#include <time.h>
 
 static MemFs* get_fs(void) { return fuse_get_context()->private_data; }
 
@@ -41,6 +42,8 @@ static int memfs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, of
 }
 
 static int memfs_open(const char* path, struct fuse_file_info* fi) {
+    (void)fi;
+
     struct stat st;
     int result = fs_getattr(get_fs(), path, &st);
 
@@ -97,33 +100,17 @@ static int memfs_write(const char* path, const char* buf, size_t size, off_t off
 static int memfs_truncate(const char* path, off_t size, struct fuse_file_info* fi) {
     (void)fi;
 
-    int result = fs_truncate(get_fs(), path, size);
-
-    if (result != 0) {
-        return result;
-    }
-
-    return 0;
+    return fs_truncate(get_fs(), path, size);
 }
 
-static int memfs_unlink(const char* path) {
-    int result = fs_unlink(get_fs(), path);
+static int memfs_unlink(const char* path) { return fs_unlink(get_fs(), path); }
 
-    if (result != 0) {
-        return result;
-    }
+static int memfs_rmdir(const char* path) { return fs_rmdir(get_fs(), path); }
 
-    return 0;
-}
+static int memfs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
+    (void)fi;
 
-static int memfs_rmdir(const char* path) {
-    int result = fs_rmdir(get_fs(), path);
-
-    if (result != 0) {
-        return result;
-    }
-
-    return 0;
+    return fs_utimens(get_fs(), path, tv);
 }
 
 struct fuse_operations memfs_operations = {
@@ -137,4 +124,5 @@ struct fuse_operations memfs_operations = {
     .truncate = memfs_truncate,
     .unlink = memfs_unlink,
     .rmdir = memfs_rmdir,
+	.utimens = memfs_utimens
 };

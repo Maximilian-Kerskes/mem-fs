@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <sys/stat.h>
 #include <stdio.h>
+#include <time.h>
 typedef struct MemFs MemFs;
 
 MemFs* fs_create(void);
@@ -22,5 +23,6 @@ ssize_t fs_write(MemFs* fs, const char* path, const char* buffer, size_t size, o
 int fs_truncate(MemFs* fs, const char* path, off_t size);
 int fs_unlink(MemFs* fs, const char* path);
 int fs_rmdir(MemFs* fs, const char* path);
+int fs_utimens(MemFs* fs, const char* path, const struct timespec tv[2]);
 
 #endif // MEM_FS_FS_H
