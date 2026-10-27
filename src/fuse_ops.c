@@ -113,16 +113,14 @@ static int memfs_utimens(const char* path, const struct timespec tv[2], struct f
     return fs_utimens(get_fs(), path, tv);
 }
 
-struct fuse_operations memfs_operations = {
-    .getattr = memfs_getattr,
-    .readdir = memfs_readdir,
-    .open = memfs_open,
-    .read = memfs_read,
-    .write = memfs_write,
-    .create = memfs_create,
-    .mkdir = memfs_mkdir,
-    .truncate = memfs_truncate,
-    .unlink = memfs_unlink,
-    .rmdir = memfs_rmdir,
-	.utimens = memfs_utimens
-};
+struct fuse_operations memfs_operations = {.getattr = memfs_getattr,
+                                           .readdir = memfs_readdir,
+                                           .open = memfs_open,
+                                           .read = memfs_read,
+                                           .write = memfs_write,
+                                           .create = memfs_create,
+                                           .mkdir = memfs_mkdir,
+                                           .truncate = memfs_truncate,
+                                           .unlink = memfs_unlink,
+                                           .rmdir = memfs_rmdir,
+                                           .utimens = memfs_utimens};

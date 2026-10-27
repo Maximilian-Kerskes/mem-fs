@@ -12,10 +12,18 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
+set(MEMFS_SOURCES
+    src/fs.c
+    src/fs_path.c
+    src/fs_inode.c
+    src/fs_file.c
+    src/fs_namespace.c
+)
+
 add_executable(${PROJECT_NAME}
     src/main.c
     src/fuse_ops.c
-    src/fs.c
+    ${MEMFS_SOURCES}
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -45,7 +53,7 @@ enable_testing()
 add_executable(${PROJECT_NAME}_test
     tests/test.c
     src/fuse_ops.c
-    src/fs.c
+    ${MEMFS_SOURCES}
 )
 
 add_test(
