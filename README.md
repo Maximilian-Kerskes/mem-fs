@@ -2,6 +2,33 @@
 
 A mountable, in-memory filesystem loosely based on ext2 written in C.
 
+## Current Status
+
+### Currently Supported Fuse Operations:
+
+- `getattr`
+- `readdir`
+- `open`
+- `read`
+- `write`
+- `create`
+- `mkdir`
+- `truncate`
+- `unlink`
+- `rmdir`
+
+### TODO Ops
+
+- `utimens`
+- `rename`
+
+### TODO Features
+
+- Replace dynamically alloced bufers with fixed-size memory blocks.
+- Implement block alloc and dealloc.
+- Update ops(read, write, truncate) to support blocks.
+- Tracking and reusing free inodes.
+
 ## Quickstart
 
 ### Dependencies
