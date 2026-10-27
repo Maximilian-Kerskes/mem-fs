@@ -1,6 +1,7 @@
 #include "internal/fs_internal.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -232,5 +233,122 @@ int fs_utimens(MemFs* fs, const char* path, const struct timespec tv[2]) {
         inode->mtime = tv[1].tv_nsec == UTIME_NOW ? fs_current_time() : tv[1];
     }
     inode->ctime = fs_current_time();
+    return 0;
+}
+
+int fs_rename(MemFs* fs, const char* from, const char* to) {
+    if (fs == NULL || from == NULL || to == NULL) {
+        return -EINVAL;
+    }
+
+    char* from_parent_path;
+    char* from_name;
+    char* to_parent_path;
+    char* to_name;
+
+    int result = fs_split_path(from, &from_parent_path, &from_name);
+    if (result != 0) {
+        free(from_parent_path);
+        free(from_name);
+        return result;
+    }
+
+    result = fs_split_path(to, &to_parent_path, &to_name);
+    if (result != 0) {
+        free(to_parent_path);
+        free(to_name);
+        return result;
+    }
+
+    uint32_t from_parent_index;
+    uint32_t to_parent_index;
+
+    result = fs_resolve_path(fs, from_parent_path, &from_parent_index);
+    free(from_parent_path);
+    if (result != 0) {
+        free(from_name);
+        return result;
+    }
+
+    result = fs_resolve_path(fs, to_parent_path, &to_parent_index);
+    free(to_parent_path);
+    if (result != 0) {
+        free(from_name);
+        return result;
+    }
+
+    Inode* from_parent = &fs->inodes[from_parent_index];
+    Inode* to_parent = &fs->inodes[to_parent_index];
+
+    if (!S_ISDIR(from_parent->mode) || !S_ISDIR(to_parent->mode)) {
+        return -ENOTDIR;
+    }
+
+    uint32_t source_index;
+    result = fs_find_dir_entry(fs, from_parent_index, from_name, &source_index);
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* source = &fs->inodes[source_index];
+
+    if (S_ISDIR(source->mode) && fs_directory_contains_inode(fs, source_index, to_parent_index)) {
+        return -EINVAL;
+    }
+
+    uint32_t destination_index;
+    result = fs_find_dir_entry(fs, to_parent_index, to_name, &destination_index);
+
+    if (result == 0) {
+        Inode* destination = &fs->inodes[destination_index];
+
+        if (S_ISDIR(source->mode) && !S_ISDIR(destination->mode)) {
+            return -ENOTDIR;
+        }
+
+        if (!S_ISDIR(source->mode) && S_ISDIR(destination->mode)) {
+            return -EISDIR;
+        }
+
+        if (S_ISDIR(destination->mode) && destination->entry_count != 0) {
+            return -ENOTEMPTY;
+        }
+
+        result = fs_remove_dir_entry(fs, to_parent_index, destination_index);
+        if (result != 0) {
+            return result;
+        }
+    } else if (result != -ENOENT) {
+        return result;
+    }
+
+    if (from_parent_index == to_parent_index) {
+        DirectoryEntry* entry = fs_find_entry_by_inode(from_parent, source_index);
+
+        char* new_name = strdup(to_name);
+        if (new_name == NULL) {
+            return -ENOMEM;
+        }
+
+        free(entry->name);
+        entry->name = new_name;
+    } else {
+        result = fs_add_dir_entry(fs, to_parent_index, to_name, source_index);
+        if (result != 0) {
+            return result;
+        }
+
+        result = fs_remove_dir_entry(fs, from_parent_index, source_index);
+        if (result != 0) {
+            return result;
+        }
+    }
+
+    source->ctime = fs_current_time();
+    from_parent->mtime = fs_current_time();
+    from_parent->ctime = fs_current_time();
+    to_parent->mtime = fs_current_time();
+    to_parent->ctime = fs_current_time();
+
     return 0;
 }

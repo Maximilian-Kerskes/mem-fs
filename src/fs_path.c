@@ -137,3 +137,32 @@ int fs_resolve_path(MemFs* fs, const char* path, uint32_t* out_inode_index) {
     *out_inode_index = current_index;
     return 0;
 }
+
+DirectoryEntry* fs_find_entry_by_inode(Inode* directory, uint32_t inode_index) {
+    for (size_t i = 0; i < directory->entry_count; i++) {
+        if (directory->entries[i].inode_index == inode_index) {
+            return &directory->entries[i];
+        }
+    }
+
+    return NULL;
+}
+
+bool fs_directory_contains_inode(MemFs* fs, uint32_t directory_index, uint32_t wanted_index) {
+    if (directory_index == wanted_index) {
+        return true;
+    }
+
+    Inode* directory = &fs->inodes[directory_index];
+
+    for (size_t i = 0; i < directory->entry_count; i++) {
+        uint32_t child_index = directory->entries[i].inode_index;
+        Inode* child = &fs->inodes[child_index];
+
+        if (S_ISDIR(child->mode) && fs_directory_contains_inode(fs, child_index, wanted_index)) {
+            return true;
+        }
+    }
+
+    return false;
+}

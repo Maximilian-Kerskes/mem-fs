@@ -113,6 +113,11 @@ static int memfs_utimens(const char* path, const struct timespec tv[2], struct f
     return fs_utimens(get_fs(), path, tv);
 }
 
+static int memfs_rename(const char* from, const char* to, unsigned int flags) {
+    (void)flags;
+    return fs_rename(get_fs(), from, to);
+}
+
 struct fuse_operations memfs_operations = {.getattr = memfs_getattr,
                                            .readdir = memfs_readdir,
                                            .open = memfs_open,
@@ -123,4 +128,5 @@ struct fuse_operations memfs_operations = {.getattr = memfs_getattr,
                                            .truncate = memfs_truncate,
                                            .unlink = memfs_unlink,
                                            .rmdir = memfs_rmdir,
-                                           .utimens = memfs_utimens};
+                                           .utimens = memfs_utimens,
+                                           .rename = memfs_rename};

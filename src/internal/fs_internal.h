@@ -49,5 +49,6 @@ int fs_resolve_path(MemFs* fs, const char* path, uint32_t* out_inode_index);
 int fs_create_inode(MemFs* fs, mode_t mode, uint32_t* out_inode_index);
 int fs_add_dir_entry(MemFs* fs, uint32_t directory_index, const char* name, uint32_t inode_index);
 int fs_remove_dir_entry(MemFs* fs, uint32_t directory_index, uint32_t inode_index);
-
+DirectoryEntry* fs_find_entry_by_inode(Inode* directory, uint32_t inode_index);
+bool fs_directory_contains_inode(MemFs* fs, uint32_t directory_index, uint32_t wanted_index);
 #endif
