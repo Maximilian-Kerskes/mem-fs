@@ -3,11 +3,10 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <string.h>
 
 static MemFs* get_fs(void) { return fuse_get_context()->private_data; }
-
-static const char hello_content[] = "Hello from mem-fs!\n";
 
 static int memfs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi) {
     (void)fi;
@@ -41,29 +40,32 @@ static int memfs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, of
     return fs_readdir(get_fs(), path, add_fuse_dir_entry, &state);
 }
 
+static int memfs_open(const char* path, struct fuse_file_info* fi) {
+    struct stat st;
+    int result = fs_getattr(get_fs(), path, &st);
+
+    if (result != 0) {
+        return result;
+    }
+
+    if (!S_ISREG(st.st_mode)) {
+        return -EISDIR;
+    }
+
+    return 0;
+}
+
 static int memfs_read(const char* path, char* buf, size_t size, off_t offset,
                       struct fuse_file_info* fi) {
     (void)fi;
 
-    if (strcmp(path, "/hello") != 0) {
-        return -ENOENT;
-    }
-    if (offset < 0) {
-        return -EINVAL;
+    ssize_t result = fs_read(fuse_get_context()->private_data, path, buf, size, offset);
+
+    if (result > INT_MAX) {
+        return -EOVERFLOW;
     }
 
-    size_t content_size = strlen(hello_content);
-    if ((size_t)offset >= content_size) {
-        return 0;
-    }
-
-    size_t remaining = content_size - (size_t)offset;
-    if (size > remaining) {
-        size = remaining;
-    }
-
-    memcpy(buf, hello_content + offset, size);
-    return (int)size;
+    return (int)result;
 }
 
 static int memfs_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
@@ -79,10 +81,60 @@ static int memfs_mkdir(const char* path, mode_t mode) {
     return fs_create_dir(get_fs(), path);
 }
 
+static int memfs_write(const char* path, const char* buf, size_t size, off_t offset,
+                       struct fuse_file_info* fi) {
+    (void)fi;
+
+    ssize_t result = fs_write(fuse_get_context()->private_data, path, buf, size, offset);
+
+    if (result > INT_MAX) {
+        return -EOVERFLOW;
+    }
+
+    return (int)result;
+}
+
+static int memfs_truncate(const char* path, off_t size, struct fuse_file_info* fi) {
+    (void)fi;
+
+    int result = fs_truncate(get_fs(), path, size);
+
+    if (result != 0) {
+        return result;
+    }
+
+    return 0;
+}
+
+static int memfs_unlink(const char* path) {
+    int result = fs_unlink(get_fs(), path);
+
+    if (result != 0) {
+        return result;
+    }
+
+    return 0;
+}
+
+static int memfs_rmdir(const char* path) {
+    int result = fs_rmdir(get_fs(), path);
+
+    if (result != 0) {
+        return result;
+    }
+
+    return 0;
+}
+
 struct fuse_operations memfs_operations = {
     .getattr = memfs_getattr,
     .readdir = memfs_readdir,
+    .open = memfs_open,
     .read = memfs_read,
+    .write = memfs_write,
     .create = memfs_create,
     .mkdir = memfs_mkdir,
+    .truncate = memfs_truncate,
+    .unlink = memfs_unlink,
+    .rmdir = memfs_rmdir,
 };

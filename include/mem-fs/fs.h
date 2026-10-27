@@ -16,7 +16,11 @@ int fs_readdir(MemFs* fs, const char* path, FsDirEntryCallback callback, void* c
 
 int fs_create_file(MemFs* fs, const char* path);
 int fs_create_dir(MemFs* fs, const char* path);
+int fs_readdir(MemFs* fs, const char* path, FsDirEntryCallback callback, void* context);
 ssize_t fs_read(MemFs* fs, const char* path, char* buffer, size_t size, off_t offset);
 ssize_t fs_write(MemFs* fs, const char* path, const char* buffer, size_t size, off_t offset);
+int fs_truncate(MemFs* fs, const char* path, off_t size);
+int fs_unlink(MemFs* fs, const char* path);
+int fs_rmdir(MemFs* fs, const char* path);
 
 #endif // MEM_FS_FS_H

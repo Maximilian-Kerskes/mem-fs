@@ -1,5 +1,6 @@
 #include "mem-fs/fs.h"
 #include <asm-generic/errno-base.h>
+#include <asm-generic/errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -451,6 +452,310 @@ int fs_readdir(MemFs* fs, const char* path, FsDirEntryCallback callback, void* c
             return 0;
         }
     }
+
+    return 0;
+}
+
+ssize_t fs_read(MemFs* fs, const char* path, char* buffer, size_t size, off_t offset) {
+    if (fs == NULL || path == NULL || (buffer == NULL && size > 0)) {
+        return -EINVAL;
+    }
+
+    if (offset < 0) {
+        return -EINVAL;
+    }
+
+    uint32_t inode_index;
+    int result = resolve_path(fs, path, &inode_index);
+
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* inode = &fs->inodes[inode_index];
+
+    if (S_ISDIR(inode->mode)) {
+        return -EISDIR;
+    }
+
+    if (!S_ISREG(inode->mode)) {
+        return -EINVAL;
+    }
+
+    if (size == 0 || offset >= inode->size) {
+        return 0;
+    }
+
+    size_t remaining = (size_t)(inode->size - offset);
+
+    if (size > remaining) {
+        size = remaining;
+    }
+
+    memcpy(buffer, inode->data + (size_t)offset, size);
+
+    return (ssize_t)size;
+}
+
+ssize_t fs_write(MemFs* fs, const char* path, const char* buffer, size_t size, off_t offset) {
+    if (fs == NULL || path == NULL || buffer == NULL) {
+        return -EINVAL;
+    }
+
+    if (offset < 0) {
+        return -EINVAL;
+    }
+
+    uint32_t inode_index;
+    int result = resolve_path(fs, path, &inode_index);
+
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* inode = &fs->inodes[inode_index];
+
+    if (S_ISDIR(inode->mode)) {
+        return -EISDIR;
+    }
+
+    if (!S_ISREG(inode->mode)) {
+        return -EINVAL;
+    }
+
+    if (size == 0) {
+        return 0;
+    }
+
+    if ((uintmax_t)offset > SIZE_MAX || size > SIZE_MAX - (size_t)offset) {
+        return -EFBIG;
+    }
+
+    size_t end = (size_t)offset + size;
+    size_t old_size = (size_t)inode->size;
+
+    if (end > old_size) {
+        char* new_data = realloc(inode->data, end);
+
+        if (new_data == NULL) {
+            return -ENOMEM;
+        }
+
+        inode->data = new_data;
+
+        if ((size_t)offset > old_size) {
+            memset(inode->data + old_size, 0, (size_t)offset - old_size);
+        };
+
+        inode->size = (off_t)end;
+    }
+
+    memcpy(inode->data + (size_t)offset, buffer, size);
+    return (ssize_t)size;
+}
+
+int fs_truncate(MemFs* fs, const char* path, off_t size) {
+    if (fs == NULL || path == NULL) {
+        return -EINVAL;
+    }
+
+    if (size < 0) {
+        return -EINVAL;
+    }
+
+    uint32_t inode_index;
+    int result = resolve_path(fs, path, &inode_index);
+
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* inode = &fs->inodes[inode_index];
+
+    if (S_ISDIR(inode->mode)) {
+        return -EISDIR;
+    }
+
+    if (!S_ISREG(inode->mode)) {
+        return -EINVAL;
+    }
+
+    if ((size_t)size > SIZE_MAX) {
+        return -EFBIG;
+    }
+
+    size_t new_size = (size_t)size;
+    size_t old_size = (size_t)inode->size;
+
+    if (new_size == old_size) {
+        return 0;
+    }
+
+    if (new_size == 0) {
+        free(inode->data);
+        inode->data = NULL;
+        inode->size = 0;
+        return 0;
+    } else if (new_size < old_size) {
+        char* new_data = realloc(inode->data, new_size);
+
+        if (new_data == NULL) {
+            return -ENOMEM;
+        }
+
+        inode->data = new_data;
+        inode->size = size;
+        return 0;
+    }
+
+    char* new_data = realloc(inode->data, size);
+
+    if (new_data == NULL) {
+        return -ENOMEM;
+    }
+
+    memset(new_data + old_size, 0, new_size - old_size);
+
+    inode->data = new_data;
+    inode->size = size;
+
+    return 0;
+}
+
+int fs_unlink(MemFs* fs, const char* path) {
+    if (fs == NULL || path == NULL) {
+        return -EINVAL;
+    }
+
+    char* parent_path;
+    char* name;
+    int result = split_path(path, &parent_path, &name);
+    if (result != 0) {
+        return result;
+    }
+
+    uint32_t parent_index;
+    result = resolve_path(fs, parent_path, &parent_index);
+
+    free(parent_path);
+
+    if (result != 0) {
+        free(name);
+        return result;
+    }
+
+    uint32_t target_index;
+
+    result = find_dir_entry(fs, parent_index, name, &target_index);
+    free(name);
+
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* parent = &fs->inodes[parent_index];
+    Inode* target = &fs->inodes[target_index];
+
+    if (S_ISDIR(target->mode)) {
+        return -EISDIR;
+    }
+
+    if (!S_ISREG(target->mode)) {
+        return -ENOENT;
+    }
+
+    size_t entry_index = 0;
+
+    while (entry_index < parent->entry_count) {
+        if (parent->entries[entry_index].inode_index == target_index) {
+            break;
+        }
+        entry_index++;
+    }
+
+    free(parent->entries[entry_index].name);
+
+    for (size_t i = entry_index; i + 1 < parent->entry_count; i++) {
+        parent->entries[i] = parent->entries[i + 1];
+    }
+
+    parent->entry_count--;
+
+    free(target->data);
+    target->data = NULL;
+    target->size = 0;
+
+    return 0;
+}
+
+int fs_rmdir(MemFs* fs, const char* path) {
+    if (fs == NULL || path == NULL) {
+        return -EINVAL;
+    }
+
+    char* parent_path;
+    char* name;
+
+    int result = split_path(path, &parent_path, &name);
+    if (result != 0) {
+        return result;
+    }
+
+    uint32_t parent_index;
+    result = resolve_path(fs, parent_path, &parent_index);
+
+    free(parent_path);
+
+    if (result != 0) {
+        free(name);
+        return result;
+    }
+
+    uint32_t target_index;
+
+    result = find_dir_entry(fs, parent_index, name, &target_index);
+    free(name);
+
+    if (result != 0) {
+        return result;
+    }
+
+    Inode* parent = &fs->inodes[parent_index];
+    Inode* target = &fs->inodes[target_index];
+
+    if (!S_ISDIR(target->mode)) {
+        return -ENOTDIR;
+    }
+
+    if (target->entry_count != 0) {
+        return -ENOTEMPTY;
+    }
+
+    size_t entry_index = 0;
+
+    while (entry_index < parent->entry_count) {
+        if (parent->entries[entry_index].inode_index == target_index) {
+            break;
+        }
+        entry_index++;
+    }
+
+    if (entry_index == parent->entry_count) {
+        return -ENOENT;
+    }
+
+    free(parent->entries[entry_index].name);
+
+    for (size_t i = entry_index; i + 1 < parent->entry_count; i++) {
+        parent->entries[i] = parent->entries[i + 1];
+    }
+
+    parent->entry_count--;
+
+    free(target->entries);
+    target->entries = NULL;
+    target->entry_count = 0;
+    target->entry_capacity = 0;
 
     return 0;
 }
