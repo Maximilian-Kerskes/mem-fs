@@ -16,9 +16,6 @@ A mountable, in-memory filesystem loosely based on ext2 written in C.
 - `truncate`
 - `unlink`
 - `rmdir`
-
-### TODO Ops
-
 - `utimens`
 - `rename`
 
