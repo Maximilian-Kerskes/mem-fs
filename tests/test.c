@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #include "mem-fs/fs.h"
 #include "mem-fs/fuse_ops.h"
@@ -175,6 +176,87 @@ static void test_unlink_and_rmdir(void) {
     fs_destroy(fs);
 }
 
+static void test_path_resolution_and_validation(void) {
+    MemFs* fs = fs_create();
+    assert(fs != NULL);
+
+    assert(fs_create_dir(fs, "/one") == 0);
+    assert(fs_create_dir(fs, "/one/two") == 0);
+    assert(fs_create_file(fs, "/one/two/file") == 0);
+
+    struct stat st;
+    assert(fs_getattr(fs, "/one//two///file", &st) == 0);
+    assert(S_ISREG(st.st_mode));
+    assert(fs_getattr(fs, "/one/two/file///", &st) == -ENOTDIR);
+    assert(fs_create_file(fs, "/one/two///another///") == 0);
+    assert(fs_getattr(fs, "/one/two/another", &st) == 0);
+
+    assert(fs_getattr(fs, NULL, &st) == -EINVAL);
+    assert(fs_getattr(fs, "relative", &st) == -EINVAL);
+    assert(fs_getattr(fs, "/missing", &st) == -ENOENT);
+    assert(fs_readdir(fs, NULL, collect_directory_entry, NULL) == -EINVAL);
+    assert(fs_readdir(fs, "/one", NULL, NULL) == -EINVAL);
+    assert(fs_write(fs, "/one/two/file", NULL, 0, 0) == -EINVAL);
+    assert(fs_read(fs, "/one/two/file", NULL, 1, 0) == -EINVAL);
+
+    fs_destroy(fs);
+}
+
+static void test_rename_and_utimens(void) {
+    MemFs* fs = fs_create();
+    assert(fs != NULL);
+    assert(fs_create_dir(fs, "/left") == 0);
+    assert(fs_create_dir(fs, "/right") == 0);
+    assert(fs_create_file(fs, "/left/file") == 0);
+    assert(fs_write(fs, "/left/file", "contents", 8, 0) == 8);
+
+    struct stat before;
+    struct stat after;
+    assert(fs_getattr(fs, "/left/file", &before) == 0);
+    assert(fs_rename(fs, "/left/file", "/left/renamed") == 0);
+    assert(fs_getattr(fs, "/left/file", &after) == -ENOENT);
+    assert(fs_getattr(fs, "/left/renamed", &after) == 0);
+    assert(after.st_ino == before.st_ino);
+
+    char buffer[16] = {0};
+    assert(fs_read(fs, "/left/renamed", buffer, sizeof(buffer), 0) == 8);
+    assert(strcmp(buffer, "contents") == 0);
+
+    assert(fs_rename(fs, "/left/renamed", "/right/moved") == 0);
+    assert(fs_getattr(fs, "/left/renamed", &after) == -ENOENT);
+    assert(fs_getattr(fs, "/right/moved", &after) == 0);
+    assert(after.st_ino == before.st_ino);
+
+    assert(fs_create_file(fs, "/right/replacement") == 0);
+    assert(fs_write(fs, "/right/replacement", "old", 3, 0) == 3);
+    assert(fs_rename(fs, "/right/moved", "/right/replacement") == 0);
+    assert(fs_getattr(fs, "/right/moved", &after) == -ENOENT);
+    assert(fs_read(fs, "/right/replacement", buffer, sizeof(buffer), 0) == 8);
+    assert(strcmp(buffer, "contents") == 0);
+
+    assert(fs_rename(fs, "/right/replacement", "/right/replacement") == 0);
+    assert(fs_create_dir(fs, "/left/child") == 0);
+    assert(fs_rename(fs, "/left", "/left/child/moved") == -EINVAL);
+    assert(fs_rename(fs, "/left/child", "/right/replacement") == -ENOTDIR);
+    assert(fs_rename(fs, "/missing", "/right/nope") == -ENOENT);
+
+    struct timespec times[2] = {{.tv_sec = 123, .tv_nsec = 456},
+                                {.tv_sec = 789, .tv_nsec = 987}};
+    assert(fs_utimens(fs, "/right/replacement", times) == 0);
+    assert(fs_getattr(fs, "/right/replacement", &after) == 0);
+    assert(after.st_atim.tv_sec == times[0].tv_sec);
+    assert(after.st_atim.tv_nsec == times[0].tv_nsec);
+    assert(after.st_mtim.tv_sec == times[1].tv_sec);
+    assert(after.st_mtim.tv_nsec == times[1].tv_nsec);
+
+    struct timespec omit[2] = {{.tv_sec = 0, .tv_nsec = UTIME_OMIT},
+                               {.tv_sec = 0, .tv_nsec = UTIME_OMIT}};
+    assert(fs_utimens(fs, "/right/replacement", omit) == 0);
+    assert(fs_utimens(fs, "/missing", times) == -ENOENT);
+
+    fs_destroy(fs);
+}
+
 static void test_null_arguments_and_operations_table(void) {
     MemFs* fs = fs_create();
     assert(fs != NULL);
@@ -188,6 +270,8 @@ static void test_null_arguments_and_operations_table(void) {
     assert(fs_truncate(NULL, "/file", 0) == -EINVAL);
     assert(fs_unlink(NULL, "/file") == -EINVAL);
     assert(fs_rmdir(NULL, "/dir") == -EINVAL);
+    assert(fs_utimens(NULL, "/file", NULL) == -EINVAL);
+    assert(fs_rename(NULL, "/file", "/other") == -EINVAL);
 
     assert(memfs_operations.getattr != NULL);
     assert(memfs_operations.readdir != NULL);
@@ -199,6 +283,8 @@ static void test_null_arguments_and_operations_table(void) {
     assert(memfs_operations.truncate != NULL);
     assert(memfs_operations.unlink != NULL);
     assert(memfs_operations.rmdir != NULL);
+    assert(memfs_operations.utimens != NULL);
+    assert(memfs_operations.rename != NULL);
 }
 
 int main(void) {
@@ -206,6 +292,8 @@ int main(void) {
     test_read_write_and_sparse_files();
     test_readdir_callback_and_capacity_growth();
     test_unlink_and_rmdir();
+    test_path_resolution_and_validation();
+    test_rename_and_utimens();
     test_null_arguments_and_operations_table();
     return 0;
 }

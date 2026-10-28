@@ -241,85 +241,87 @@ int fs_rename(MemFs* fs, const char* from, const char* to) {
         return -EINVAL;
     }
 
-    char* from_parent_path;
-    char* from_name;
-    char* to_parent_path;
-    char* to_name;
+    char* from_parent_path = NULL;
+    char* from_name = NULL;
+    char* to_parent_path = NULL;
+    char* to_name = NULL;
 
     int result = fs_split_path(from, &from_parent_path, &from_name);
     if (result != 0) {
-        free(from_parent_path);
-        free(from_name);
-        return result;
+        goto cleanup;
     }
 
     result = fs_split_path(to, &to_parent_path, &to_name);
     if (result != 0) {
-        free(to_parent_path);
-        free(to_name);
-        return result;
+        goto cleanup;
     }
 
     uint32_t from_parent_index;
     uint32_t to_parent_index;
 
     result = fs_resolve_path(fs, from_parent_path, &from_parent_index);
-    free(from_parent_path);
     if (result != 0) {
-        free(from_name);
-        return result;
+        goto cleanup;
     }
 
     result = fs_resolve_path(fs, to_parent_path, &to_parent_index);
-    free(to_parent_path);
     if (result != 0) {
-        free(from_name);
-        return result;
+        goto cleanup;
     }
 
     Inode* from_parent = &fs->inodes[from_parent_index];
     Inode* to_parent = &fs->inodes[to_parent_index];
 
     if (!S_ISDIR(from_parent->mode) || !S_ISDIR(to_parent->mode)) {
-        return -ENOTDIR;
+        result = -ENOTDIR;
+        goto cleanup;
     }
 
     uint32_t source_index;
     result = fs_find_dir_entry(fs, from_parent_index, from_name, &source_index);
     if (result != 0) {
-        return result;
+        goto cleanup;
     }
 
     Inode* source = &fs->inodes[source_index];
 
     if (S_ISDIR(source->mode) && fs_directory_contains_inode(fs, source_index, to_parent_index)) {
-        return -EINVAL;
+        result = -EINVAL;
+        goto cleanup;
     }
 
     uint32_t destination_index;
     result = fs_find_dir_entry(fs, to_parent_index, to_name, &destination_index);
 
     if (result == 0) {
+        if (destination_index == source_index) {
+            result = 0;
+            goto cleanup;
+        }
+
         Inode* destination = &fs->inodes[destination_index];
 
         if (S_ISDIR(source->mode) && !S_ISDIR(destination->mode)) {
-            return -ENOTDIR;
+            result = -ENOTDIR;
+            goto cleanup;
         }
 
         if (!S_ISDIR(source->mode) && S_ISDIR(destination->mode)) {
-            return -EISDIR;
+            result = -EISDIR;
+            goto cleanup;
         }
 
         if (S_ISDIR(destination->mode) && destination->entry_count != 0) {
-            return -ENOTEMPTY;
+            result = -ENOTEMPTY;
+            goto cleanup;
         }
 
         result = fs_remove_dir_entry(fs, to_parent_index, destination_index);
         if (result != 0) {
-            return result;
+            goto cleanup;
         }
     } else if (result != -ENOENT) {
-        return result;
+        goto cleanup;
     }
 
     if (from_parent_index == to_parent_index) {
@@ -327,7 +329,8 @@ int fs_rename(MemFs* fs, const char* from, const char* to) {
 
         char* new_name = strdup(to_name);
         if (new_name == NULL) {
-            return -ENOMEM;
+            result = -ENOMEM;
+            goto cleanup;
         }
 
         free(entry->name);
@@ -335,12 +338,12 @@ int fs_rename(MemFs* fs, const char* from, const char* to) {
     } else {
         result = fs_add_dir_entry(fs, to_parent_index, to_name, source_index);
         if (result != 0) {
-            return result;
+            goto cleanup;
         }
 
         result = fs_remove_dir_entry(fs, from_parent_index, source_index);
         if (result != 0) {
-            return result;
+            goto cleanup;
         }
     }
 
@@ -350,5 +353,12 @@ int fs_rename(MemFs* fs, const char* from, const char* to) {
     to_parent->mtime = fs_current_time();
     to_parent->ctime = fs_current_time();
 
-    return 0;
+    result = 0;
+
+cleanup:
+    free(from_parent_path);
+    free(from_name);
+    free(to_parent_path);
+    free(to_name);
+    return result;
 }
