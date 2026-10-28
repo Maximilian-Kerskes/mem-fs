@@ -19,12 +19,28 @@ A mountable, in-memory filesystem loosely based on ext2 written in C.
 - `utimens`
 - `rename`
 
+### TODO Ops
+
+- `chmod`
+- `chown`
+- `statfs`
+- `access`
+
+#### maybe...
+
+- `flush`
+- `symlink`
+- `readlink`
+- `mknod`
+- `release`
+
 ### TODO Features
 
 - Replace dynamically alloced bufers with fixed-size memory blocks.
 - Implement block alloc and dealloc.
 - Update ops(read, write, truncate) to support blocks.
 - Tracking and reusing free inodes.
+- Use flags passed into .rename 
 
 ## Quickstart
 
